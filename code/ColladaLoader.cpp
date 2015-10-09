@@ -1153,17 +1153,39 @@ void ColladaLoader::CreateAnimation( aiScene* pScene, const ColladaParser& pPars
 
                   // find the next time value larger than the current
                   size_t pos = 0;
-                  while( pos < e.mTimeAccessor->mCount)
-                  {
-                      float t = ReadFloat( *e.mTimeAccessor, *e.mTimeData, pos, 0);
-                      if( t > time)
-                      {
-                          nextTime = std::min( nextTime, t);
-                          break;
-                      }
-                      ++pos;
-                  }
+				  while (pos < e.mTimeAccessor->mCount)
+				  {
+					  float t = ReadFloat(*e.mTimeAccessor, *e.mTimeData, pos, 0);
+					  if (t > time)
+					  {
+						  nextTime = std::min(nextTime, t);
+						  break;
+					  }
+					  ++pos;
+				  }
+
+				  // https://github.com/assimp/assimp/issues/458
+				  // Sub-sample axis-angle channels if the delta between two consecutive
+				  // key-frame angles is >= 180 degrees.
+				  if (transforms[e.mTransformIndex].mType == Collada::TF_ROTATE && e.mSubElement == 3 && pos > 0 && pos < e.mTimeAccessor->mCount) {
+					  float cur_key_angle = ReadFloat(*e.mValueAccessor, *e.mValueData, pos, 0);
+					  float last_key_angle = ReadFloat(*e.mValueAccessor, *e.mValueData, pos - 1, 0);
+					  float cur_key_time = ReadFloat(*e.mTimeAccessor, *e.mTimeData, pos, 0);
+					  float last_key_time = ReadFloat(*e.mTimeAccessor, *e.mTimeData, pos - 1, 0);
+
+					  float last_eval_angle = last_key_angle + (cur_key_angle - last_key_angle) * (time - last_key_time) / (cur_key_time - last_key_time);
+					  float delta = std::fabs(cur_key_angle - last_eval_angle);
+					  if (delta >= 180.0f) {
+						  int subSampleCount = static_cast<int>(std::floorf(delta / 90.0f));
+						  if (cur_key_time != time) {
+							  float nextSampleTime = time + (cur_key_time - time) / subSampleCount;
+							  nextTime = std::min(nextTime, nextSampleTime);
+						  }
+					  }
+				  }
               }
+
+
 
               // no more keys on any channel after the current time -> we're done
               if( nextTime > 1e19)
